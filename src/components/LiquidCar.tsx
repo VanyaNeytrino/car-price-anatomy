@@ -20,6 +20,7 @@ const getHexColor = (tailwindClass: string) => {
   return map[tailwindClass] || '#ffffff';
 };
 
+
 export default function LiquidCar({ car }: LiquidCarProps) {
   const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
 
