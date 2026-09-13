@@ -2,7 +2,8 @@
 
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
-import type { CarForWidget } from '@/types';
+import UnverifiedMark from '@/components/UnverifiedMark';
+import type { CarForWidget, WidgetCostLayer } from '@/types';
 import { formatMoney, formatMillions, formatPercent, getVisible, layoutWidths } from '@/lib/pricing/format';
 
 export type WidgetTheme = 'dark' | 'light';
@@ -28,6 +29,19 @@ const LEGACY_COLORS: Record<string, string> = {
 
 const toHex = (color: string) =>
   color.startsWith('#') ? color : (LEGACY_COLORS[color] ?? '#94a3b8');
+
+/**
+ * Оговорка к ставке. Подтверждённые слои не помечаются ничем: помечать надо
+ * исключение, иначе пометки превращаются в шум и их перестают замечать.
+ * Тон спокойный — это оговорка о точности, а не сообщение об ошибке.
+ */
+function confidenceNote(c: WidgetCostLayer['confidence']): string | null {
+  if (!c || c.status === 'VERIFIED') return null;
+  if (c.status === 'STALE') {
+    return `${c.lawTitle} изменился после последней сверки — ставка требует проверки`;
+  }
+  return `Ставка не сверена с ${c.lawTitle}`;
+}
 
 const THEMES = {
   dark: {
@@ -252,9 +266,17 @@ export default function LiquidCar({ car, theme = 'dark' }: LiquidCarProps) {
             <div className="flex items-center gap-4 w-full">
               <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: toHex(selected.color) }} />
               <div className="min-w-0 flex-1">
-                <div className={`font-medium ${t.text}`}>{selected.label}</div>
+                <div className={`font-medium ${t.text} flex items-center gap-1.5`}>
+                  {selected.label}
+                  {confidenceNote(selected.confidence) && <UnverifiedMark theme={theme} />}
+                </div>
                 {selected.description && (
                   <div className={`text-xs mt-0.5 ${t.faint} truncate`}>{selected.description}</div>
+                )}
+                {confidenceNote(selected.confidence) && (
+                  <div className={`text-xs mt-1 ${t.faint}`}>
+                    {confidenceNote(selected.confidence)}
+                  </div>
                 )}
               </div>
               <div className="text-right shrink-0">
@@ -295,8 +317,8 @@ export default function LiquidCar({ car, theme = 'dark' }: LiquidCarProps) {
                     className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${t.rowHover} ${isSelected ? (theme === 'dark' ? 'bg-white/5' : 'bg-black/5') : ''}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className={`text-[10px] font-mono w-4 shrink-0 ${t.faint}`}>{index + 1}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`text-[10px] font-mono w-3 shrink-0 ${t.faint}`}>{index + 1}</span>
                         <motion.span
                           animate={{ scale: isSelected ? 1.35 : 1 }}
                           transition={{ duration: reduceMotion ? 0 : 0.2 }}
@@ -309,6 +331,9 @@ export default function LiquidCar({ car, theme = 'dark' }: LiquidCarProps) {
                         >
                           {layer.label}
                         </span>
+                        {confidenceNote(layer.confidence) && (
+                          <span className="-ml-0.5"><UnverifiedMark theme={theme} /></span>
+                        )}
                       </div>
                       <div className="flex items-baseline gap-2 shrink-0">
                         <span className={`text-[11px] font-mono ${t.faint}`}>{formatPercent(share)}</span>

@@ -17,18 +17,18 @@ model Organization {
   slug      String   @unique // Например "rucars" -> saas.com/widget/rucars/...
   domain    String?
   createdAt DateTime @default(now())
-  
-  users     User[]
-  cars      Car[]
+
+  users User[]
+  cars  Car[]
 }
 
 model User {
-  id             String       @id @default(cuid())
-  name           String?
-  email          String       @unique
-  passwordHash   String       // bcrypt
-  role           String       @default("ADMIN") // ADMIN, OWNER
-  
+  id           String  @id @default(cuid())
+  name         String?
+  email        String  @unique
+  passwordHash String // bcrypt
+  role         String  @default("ADMIN") // ADMIN, OWNER
+
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
 }
@@ -36,29 +36,29 @@ model User {
 // --- Продуктовая часть ---
 
 model Car {
-  id             String       @id @default(cuid())
-  
-  // Организация теперь опциональна. Если null — значит это глобальный системный шаблон.
-  organizationId String?      
-  organization   Organization? @relation(fields: [organizationId], references: [id])
-  
-  // Флаг шаблона. Если true — это эталон, который можно клонировать.
-  isTemplate     Boolean      @default(false)
+  id String @id @default(cuid())
 
-  brand          String
-  model          String
-  year           Int
-  
+  // Организация теперь опциональна. Если null — значит это глобальный системный шаблон.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  // Флаг шаблона. Если true — это эталон, который можно клонировать.
+  isTemplate Boolean @default(false)
+
+  brand String
+  model String
+  year  Int
+
   // Ссылки на медиа
-  image          String       
-  maskImage      String?      
-  
+  image     String
+  maskImage String?
+
   // Геометрия SVG (для совместимости с текущим фронтом)
-  viewBox        String       @default("0 0 1000 380")
-  svgPath        String       @default("")
+  viewBox String @default("0 0 1000 380")
+  svgPath String @default("")
 
   // JSON хранит { engine: "1.5T", power: "449 HP", range: "1315 KM" }
-  specs          Json         
+  specs Json
 
   // --- Входные данные для калькулятора растаможки ---
   // Раньше суммы вбивались руками и протухали: две машины в seed оказались
@@ -67,34 +67,78 @@ model Car {
   cnyRate             Decimal?  @db.Decimal(10, 4)
   eurRate             Decimal?  @db.Decimal(10, 4)
   rateDate            DateTime?
-  engineCc            Int?      // 0 у чистых электромобилей
-  powerHp             Int?      // пиковая, из ПТС
-  thirtyMinutePowerHp Int?      // для EV/гибридов, если подтверждена
-  powertrain          String    @default("ICE")       // ICE | HYBRID | EREV | EV
+  engineCc            Int? // 0 у чистых электромобилей
+  powerHp             Int? // пиковая, из ПТС
+  thirtyMinutePowerHp Int? // для EV/гибридов, если подтверждена
+  powertrain          String    @default("ICE") // ICE | HYBRID | EREV | EV
   importScheme        String    @default("INDIVIDUAL") // INDIVIDUAL | LEGAL_ENTITY
 
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  costs          CostLayer[]
+  costs CostLayer[]
 }
 
 model CostLayer {
-  id          String  @id @default(cuid())
-  carId       String
-  car         Car     @relation(fields: [carId], references: [id], onDelete: Cascade)
-  
+  id    String @id @default(cuid())
+  carId String
+  car   Car    @relation(fields: [carId], references: [id], onDelete: Cascade)
+
   label       String
   amount      Int
-  color       String  // HEX. Раньше тут лежал класс Tailwind, который мог
-                      // не попасть в сборку и молча становился белым.
+  color       String // HEX. Раньше тут лежал класс Tailwind, который мог
+  // не попасть в сборку и молча становился белым.
   description String?
   order       Int     @default(0)
   isVisible   Boolean @default(true)
 
   // Считан калькулятором (пересчитывается при смене входных данных)
   // или вбит дилером руками (логистика, маржа — их трогать нельзя).
-  kind        String  @default("MANUAL")
-  isAuto      Boolean @default(false)
+  kind   String  @default("MANUAL")
+  isAuto Boolean @default(false)
+}
+
+// --- Проверяемость ставок ---
+//
+// Калькулятор не мог отличить сверенное от предположительного: утильсбор для
+// электромобилей и пошлина, сверенная с ЕЭК № 107, выглядели одинаково уверенно.
+// Статус живёт в базе, а не в коде, чтобы подтверждение из админки сразу меняло
+// пометки во всех виджетах, без пересчёта машин и без деплоя.
+
+model RateCheck {
+  id      String @id @default(cuid())
+  // recycling_ice | recycling_ev | duty_unified | duty_legal | excise | clearance_fee
+  rateKey String @unique
+  // VERIFIED — сверено с нормой; UNVERIFIED — не подтверждено;
+  // STALE — норму правили после сверки.
+  status  String @default("UNVERIFIED")
+
+  lawTitle     String
+  lawRedaction String?
+  sourceUrl    String?
+
+  verifiedAt DateTime?
+  verifiedBy String?
+  note       String?
+
+  // Когда сторож последний раз смотрел ленту НПА. Пусто — проверка ни разу
+  // не отрабатывала, и это не то же самое, что «изменений нет».
+  lastCheckedAt DateTime?
+
+  events RateCheckEvent[]
+}
+
+model RateCheckEvent {
+  id          String    @id @default(cuid())
+  rateCheckId String
+  rateCheck   RateCheck @relation(fields: [rateCheckId], references: [id], onDelete: Cascade)
+
+  // VERIFIED_BY_HUMAN | LAW_CHANGED | CHECK_RAN | CHECK_FAILED
+  kind        String
+  message     String
+  documentUrl String?
+  createdAt   DateTime @default(now())
+
+  @@index([rateCheckId, createdAt])
 }

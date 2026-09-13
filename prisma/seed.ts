@@ -8,6 +8,7 @@ import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { calcBreakdown, ageBandFromYear, type Powertrain, type ImportScheme } from '../src/lib/pricing'
 import { fetchCbrRates } from '../src/lib/cbr'
+import { RATE_KEY_LAWS, type RateKey } from '../src/lib/pricing/rate-keys'
 
 const prisma = new PrismaClient({ log: ['warn', 'error'] })
 
@@ -156,6 +157,66 @@ async function seedOrganization(name: string, slug: string, email: string) {
   return org
 }
 
+/**
+ * Начальные статусы ставок. Проставлены по факту, а не оптимистично:
+ * VERIFIED стоит только там, где таблица реально сверена с текстом нормы.
+ * Единая ставка сверена с Решением ЕЭК № 107 (ред. 24.02.2026) 13.09.2026 —
+ * совпала до знака. Остальное подтверждено только вторичными источниками,
+ * а утильсбор для электромобилей не подтверждён вовсе.
+ */
+const RATE_SEED: Array<{
+  key: RateKey
+  status: 'VERIFIED' | 'UNVERIFIED'
+  redaction?: string
+  note?: string
+}> = [
+  {
+    key: 'duty_unified',
+    status: 'VERIFIED',
+    redaction: 'ред. от 24.02.2026',
+    note: 'Прил. 2, табл. 2 сверена построчно: пороги стоимости, ставки 54/48%, минимумы 2,5-20 евро/см3.',
+  },
+  {
+    key: 'recycling_ice',
+    status: 'UNVERIFIED',
+    redaction: 'ред. от 06.02.2026',
+    note: 'Значения сходятся у двух независимых источников и бьются с базовой ставкой (47,64 x 20 000 = 952 800), но текст приложения не прочитан.',
+  },
+  {
+    key: 'recycling_ev',
+    status: 'UNVERIFIED',
+    redaction: 'ред. от 06.02.2026',
+    note: 'У электромобилей нет рабочего объёма, строка перечня своя. Достоверного значения найти не удалось.',
+  },
+  { key: 'duty_legal', status: 'UNVERIFIED', note: 'Ставка 15% взята из обзоров, по ЕТТ не сверялась.' },
+  { key: 'excise', status: 'UNVERIFIED', note: 'Ставки из публикаций о ФЗ № 425-ФЗ, текст ст. 193 НК РФ не сверялся.' },
+  { key: 'clearance_fee', status: 'UNVERIFIED', note: 'Суммы известны с 2021 года, действующая редакция ПП № 342 не проверялась.' },
+]
+
+async function seedRateChecks() {
+  for (const r of RATE_SEED) {
+    const law = RATE_KEY_LAWS[r.key]
+    await prisma.rateCheck.upsert({
+      where: { rateKey: r.key },
+      // Существующие записи не трогаем: человек мог уже что-то подтвердить,
+      // и повторный сид не должен сбрасывать его работу.
+      update: {},
+      create: {
+        rateKey: r.key,
+        status: r.status,
+        lawTitle: law.title,
+        lawRedaction: r.redaction ?? null,
+        sourceUrl: law.url,
+        note: r.note ?? null,
+        verifiedAt: r.status === 'VERIFIED' ? new Date('2026-09-13') : null,
+        verifiedBy: r.status === 'VERIFIED' ? 'аудит 13.09.2026' : null,
+      },
+    })
+  }
+  const verified = RATE_SEED.filter((r) => r.status === 'VERIFIED').length
+  console.log(`Статусы ставок: ${verified} сверено, ${RATE_SEED.length - verified} требует сверки`)
+}
+
 async function main() {
   if (isProd && process.env.SEED_ADMIN_PASSWORD === DEV_PASSWORD) {
     throw new Error('SEED_ADMIN_PASSWORD совпадает с паролем из репозитория. Задайте другой.')
@@ -181,6 +242,8 @@ async function main() {
       ? '  учётки созданы'
       : '  учётки НЕ созданы: задайте SEED_ADMIN_PASSWORD или зарегистрируйтесь через /register'
   )
+
+  await seedRateChecks()
 
   for (const car of CARS) {
     const result = calcBreakdown({
