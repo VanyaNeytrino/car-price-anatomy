@@ -1,6 +1,14 @@
 # Выкатка на Vercel
 
-Проект уже привязан к Vercel (`.vercel/project.json`, проект `car-price-anatomy`).
+Проект привязан к Vercel (`.vercel/project.json`, проект `car-price-anatomy`).
+
+## Внимание: два репозитория
+
+Vercel собирает из `VanyaNeytrino/car-price-anatomy_001` (приватный, один коммит
+от 26.11.2025). Вся работа ведётся в `VanyaNeytrino/car-price-anatomy` (публичный).
+Пока Vercel не переключат на второй, деплой будет собирать ноябрьскую версию.
+
+Переключить: Project Settings → Git → Disconnect → подключить `car-price-anatomy`.
 
 ## Что нужно до первого деплоя
 
@@ -35,16 +43,20 @@
 
 ### 4. Наполнение базы
 
-Сид не запускается на проде без явного разрешения — в нём тестовые пароли,
-и случайный запуск создал бы учётку, в которую может войти любой читатель репозитория.
+Репозиторий публичный, поэтому на проде сид по умолчанию **не создаёт учётки** —
+иначе войти в админку смог бы любой, кто открыл `prisma/seed.ts` на гитхабе.
+Сеются только машины-шаблоны, а свою учётку владелец заводит через `/register`.
 
 ```bash
-vercel env pull .env.production.local   # забрать прод-переменные
-DATABASE_URL="<прод>" ALLOW_PROD_SEED=yes npx tsx prisma/seed.ts
+vercel env pull .env.production.local
+DATABASE_URL="<прод>" NODE_ENV=production npx tsx prisma/seed.ts
 ```
 
-После этого **сразу смените пароли** учёток `admin@rucars.ru` и `admin@teslaimport.ru`
-либо удалите их и зарегистрируйтесь заново через `/register`.
+Если демо-учётки всё же нужны, задайте свой пароль (тот, что в коде, не примется):
+
+```bash
+DATABASE_URL="<прод>" NODE_ENV=production SEED_ADMIN_PASSWORD="<свой>" npx tsx prisma/seed.ts
+```
 
 ## Деплой
 

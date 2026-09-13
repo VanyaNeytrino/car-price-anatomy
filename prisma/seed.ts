@@ -125,31 +125,40 @@ const CARS: CarSeed[] = [
 /** Слои, которые дилер задаёт сам — калькулятор их не пересчитывает. */
 const MANUAL_KINDS = new Set(['LOGISTICS', 'MARGIN'])
 
-async function seedOrganization(name: string, slug: string, email: string, password: string) {
+/**
+ * Пароль для демо-учёток.
+ *
+ * Репозиторий публичный, поэтому зашитый пароль означал бы, что войти в админку
+ * сможет любой, кто откроет этот файл. На проде учётки создаются, только если
+ * пароль пришёл из окружения; иначе сеются одни машины, а свою учётку владелец
+ * заводит через /register.
+ */
+const DEV_PASSWORD = 'password123'
+const isProd = process.env.NODE_ENV === 'production'
+const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? (isProd ? null : DEV_PASSWORD)
+
+async function seedOrganization(name: string, slug: string, email: string) {
   const org = await prisma.organization.upsert({
     where: { slug },
     update: { name },
     create: { name, slug },
   })
 
-  const passwordHash = await bcrypt.hash(password, 10)
+  if (!adminPassword) return org
+
+  const passwordHash = await bcrypt.hash(adminPassword, 10)
   await prisma.user.upsert({
     where: { email },
     update: { passwordHash, organizationId: org.id },
-    create: { email, name: name, passwordHash, role: 'OWNER', organizationId: org.id },
+    create: { email, name, passwordHash, role: 'OWNER', organizationId: org.id },
   })
 
   return org
 }
 
 async function main() {
-  // Пароли в сиде общеизвестны, потому что лежат в репозитории. Запуск по
-  // ошибке на проде создал бы учётку, в которую может войти кто угодно.
-  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== 'yes') {
-    throw new Error(
-      'Сид содержит тестовые пароли и не предназначен для прода. ' +
-      'Если это осознанное действие — ALLOW_PROD_SEED=yes.'
-    )
+  if (isProd && process.env.SEED_ADMIN_PASSWORD === DEV_PASSWORD) {
+    throw new Error('SEED_ADMIN_PASSWORD совпадает с паролем из репозитория. Задайте другой.')
   }
 
   console.log('Сеем данные...')
@@ -163,10 +172,15 @@ async function main() {
     console.log(`ЦБ недоступен, беру запасной курс ${FALLBACK_RATES.cny} ₽/¥`)
   }
 
-  const rucars = await seedOrganization('RuCars Import', 'rucars', 'admin@rucars.ru', 'password123')
+  const rucars = await seedOrganization('RuCars Import', 'rucars', 'admin@rucars.ru')
   // Вторая организация нужна, чтобы было на чём проверять мультитенантность.
-  const tesla = await seedOrganization('Tesla Import', 'tesla-import', 'admin@teslaimport.ru', 'password123')
+  const tesla = await seedOrganization('Tesla Import', 'tesla-import', 'admin@teslaimport.ru')
   console.log(`Организации: ${rucars.name}, ${tesla.name}`)
+  console.log(
+    adminPassword
+      ? '  учётки созданы'
+      : '  учётки НЕ созданы: задайте SEED_ADMIN_PASSWORD или зарегистрируйтесь через /register'
+  )
 
   for (const car of CARS) {
     const result = calcBreakdown({
@@ -188,7 +202,9 @@ async function main() {
     await prisma.car.create({
       data: {
         id: car.id,
-        organizationId: rucars.id,
+        // Без демо-учёток шаблоны должны быть глобальными, иначе машины
+        // окажутся заперты в организации, в которую некому войти.
+        organizationId: adminPassword ? rucars.id : null,
         isTemplate: true,
         brand: car.brand,
         model: car.model,
