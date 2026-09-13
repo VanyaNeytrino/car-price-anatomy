@@ -2,11 +2,36 @@
 import { prisma } from "@/lib/prisma";
 import { requireOrg } from "@/lib/session";
 import { updateOrganization } from "@/app/actions/update-org";
-import { RATES } from "@/lib/pricing/rates";
+import RateStatusPanel, { type RateRow } from "./_components/RateStatusPanel";
+import { KEYS_NOT_WATCHED } from "@/lib/law-watch";
+import { RATE_KEYS, RATE_KEY_LAWS, type RateKey, type RateStatus } from "@/lib/pricing/rate-keys";
 
 export default async function SettingsPage() {
   const { organizationId } = await requireOrg();
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } });
+  const [org, checks] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: organizationId } }),
+    prisma.rateCheck.findMany({
+      include: { events: { orderBy: { createdAt: "desc" }, take: 10 } },
+    }),
+  ]);
+
+  // Порядок фиксированный, а не из базы: так панель не прыгает между заходами.
+  const rows: RateRow[] = RATE_KEYS.map((key) => {
+    const row = checks.find((c) => c.rateKey === key);
+    return {
+      rateKey: key,
+      status: (row?.status as RateStatus) ?? "UNVERIFIED",
+      lawTitle: row?.lawTitle ?? RATE_KEY_LAWS[key].title,
+      lawRedaction: row?.lawRedaction ?? null,
+      sourceUrl: row?.sourceUrl ?? RATE_KEY_LAWS[key].url,
+      verifiedAt: row?.verifiedAt ?? null,
+      verifiedBy: row?.verifiedBy ?? null,
+      note: row?.note ?? null,
+      lastCheckedAt: row?.lastCheckedAt ?? null,
+      watched: !KEYS_NOT_WATCHED.includes(key as RateKey),
+      events: row?.events ?? [],
+    };
+  });
 
   return (
     <div className="p-6 sm:p-8 max-w-2xl">
@@ -55,30 +80,10 @@ export default async function SettingsPage() {
         </form>
       </div>
 
-      {/*
-        Раньше здесь висела мёртвая заглушка «Branding (Pro)». Вместо неё —
-        то, что реально важно знать дилеру: на какие ставки опирается расчёт.
-      */}
-      <div className="mt-8 bg-zinc-900 border border-white/10 rounded-xl p-6">
-        <h2 className="text-xl font-bold mb-2">Ставки в расчёте</h2>
-        <p className="text-sm text-zinc-500 mb-4">
-          Версия таблицы {RATES.version}, сверена {new Date(RATES.verifiedAt).toLocaleDateString('ru-RU')}.
-        </p>
-        <dl className="space-y-2 text-sm">
-          {Object.entries(RATES.sources).map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-4 border-b border-white/5 pb-2">
-              <dt className="text-zinc-500">
-                {{ recycling: 'Утильсбор', excise: 'Акциз', unifiedDuty: 'Единая ставка', clearanceFee: 'Таможенный сбор' }[key] ?? key}
-              </dt>
-              <dd className="text-zinc-300 text-right">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-4 text-xs text-amber-500/80">
-          Ставки собраны из открытых источников и требуют сверки с первоисточником
-          перед использованием в коммерческих расчётах.
-        </p>
+      <div className="mt-8">
+        <RateStatusPanel rows={rows} />
       </div>
+
     </div>
   );
 }
