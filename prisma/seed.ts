@@ -7,13 +7,12 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { calcBreakdown, ageBandFromYear, type Powertrain, type ImportScheme } from '../src/lib/pricing'
+import { fetchCbrRates } from '../src/lib/cbr'
 
 const prisma = new PrismaClient({ log: ['warn', 'error'] })
 
-// Курсы ЦБ РФ на 12.09.2026. В приложении обновляются из настроек организации.
-const CNY_RATE = 12.5637
-const EUR_RATE = 96.5
-const RATE_DATE = new Date('2026-09-12')
+// Запасные курсы на случай, если ЦБ недоступен: сид должен отрабатывать и офлайн.
+const FALLBACK_RATES = { cny: 12.5519, eur: 97.8728, date: new Date('2026-09-12') }
 
 type CarSeed = {
   id: string
@@ -34,12 +33,21 @@ type CarSeed = {
   specs: { engine: string; power: string; range: string }
 }
 
-// ВНИМАНИЕ: цены — за модели 2026 модельного года (L9 после рестайла с активной
-// подвеской, 009 на 900 В). Строки specs достались от дорестайла и требуют
-// сверки с актуальными характеристиками.
+// Цены — за модели 2026 модельного года, комплектации по китайскому прайсу.
+//
+// ВНИМАНИЕ по Zeekr 001: российские дилеры называют комплектации своими
+// именами (WE, Ultra) и они не ложатся один в один на китайскую линейку
+// Max / Ultra / Ultra+. Цена «от 6,06 млн» на сайтах — заманивающая: честный
+// расчёт по базовой Max даёт больше. Маржа подобрана так, чтобы итог попадал
+// в реальный диапазон, но по 001 её стоит перепроверить отдельно.
+//
+// ВНИМАНИЕ по картинкам: public/cars/zeekr-001*.png — временные заглушки,
+// это фотографии 009. Заменить файлами настоящего 001, менять код не нужно.
+//
+// Идентификаторы читаемые и служат адресом страницы: /car/zeekr-001-ultra.
 const CARS: CarSeed[] = [
   {
-    id: 'lixiang-l9',
+    id: 'lixiang-l9-ultra',
     brand: 'Lixiang',
     model: 'L9 Ultra',
     year: 2026,
@@ -51,7 +59,7 @@ const CARS: CarSeed[] = [
     logisticsRub: 460_000,
     marginRub: 1_400_000,
     viewBox: '0 0 1000 380',
-    svgPath: 'M50,150 Q60,100 120,90 L280,85 L680,75 Q750,80 780,130 L890,140 Q910,160 910,220 L910,260 Q910,290 880,300 L800,300 Q800,230 730,230 Q660,230 660,300 L340,300 Q340,230 270,230 Q200,230 200,300 L100,300 Q80,300 80,270 L80,220 Q80,180 50,150 Z',
+    svgPath: '',
     image: '/cars/lixiang.png',
     maskImage: '/cars/l9-mask.png',
     specs: { engine: '1.5T EREV', power: '449 л.с.', range: '1315 км' },
@@ -61,20 +69,56 @@ const CARS: CarSeed[] = [
     brand: 'Zeekr',
     model: '009',
     year: 2026,
-    // Обычный 009, а не Grand за 789 000 ¥: в России возят именно его,
-    // и рыночные 7,6-11,3 млн ₽ относятся к этой версии.
     basePriceCny: 439_800,
-    engineCc: 0, // чистый электромобиль — рабочего объёма нет
+    engineCc: 0,
     powerHp: 544,
     powertrain: 'EV',
     importScheme: 'INDIVIDUAL',
     logisticsRub: 500_000,
-    marginRub: 1_000_000,
+    marginRub: 1_670_000,
     viewBox: '0 0 500 200',
-    svgPath: 'M30,140 L40,70 L140,40 L400,40 L460,80 L460,150 L430,170 L390,170 Q390,130 350,130 Q310,130 310,170 L190,170 Q190,130 150,130 Q110,130 110,170 L30,170 Z',
+    svgPath: '',
     image: '/cars/zeekr.png',
     maskImage: '/cars/zeekr-mask.png',
     specs: { engine: 'Электро', power: '544 л.с.', range: '702 км' },
+  },
+  {
+    // Max 103 kWh RWD — базовая версия китайского прайса.
+    id: 'zeekr-001-max',
+    brand: 'Zeekr',
+    model: '001 Max',
+    year: 2026,
+    basePriceCny: 269_800,
+    engineCc: 0,
+    powerHp: 496,
+    powertrain: 'EV',
+    importScheme: 'INDIVIDUAL',
+    logisticsRub: 450_000,
+    marginRub: 900_000,
+    viewBox: '0 0 500 200',
+    svgPath: '',
+    image: '/cars/zeekr-001.png',
+    maskImage: '/cars/zeekr-001-mask.png',
+    specs: { engine: 'Электро, задний привод', power: '496 л.с.', range: '810 км' },
+  },
+  {
+    // Ultra 103 kWh AWD, два мотора.
+    id: 'zeekr-001-ultra',
+    brand: 'Zeekr',
+    model: '001 Ultra',
+    year: 2026,
+    basePriceCny: 299_800,
+    engineCc: 0,
+    powerHp: 912,
+    powertrain: 'EV',
+    importScheme: 'INDIVIDUAL',
+    logisticsRub: 450_000,
+    marginRub: 2_000_000,
+    viewBox: '0 0 500 200',
+    svgPath: '',
+    image: '/cars/zeekr-001.png',
+    maskImage: '/cars/zeekr-001-mask.png',
+    specs: { engine: 'Электро, полный привод', power: '912 л.с.', range: '762 км' },
   },
 ]
 
@@ -110,6 +154,15 @@ async function main() {
 
   console.log('Сеем данные...')
 
+  let rates = FALLBACK_RATES
+  try {
+    const live = await fetchCbrRates()
+    rates = live
+    console.log(`Курс ЦБ на ${live.date.toLocaleDateString('ru-RU')}: ${live.cny.toFixed(4)} ₽/¥`)
+  } catch {
+    console.log(`ЦБ недоступен, беру запасной курс ${FALLBACK_RATES.cny} ₽/¥`)
+  }
+
   const rucars = await seedOrganization('RuCars Import', 'rucars', 'admin@rucars.ru', 'password123')
   // Вторая организация нужна, чтобы было на чём проверять мультитенантность.
   const tesla = await seedOrganization('Tesla Import', 'tesla-import', 'admin@teslaimport.ru', 'password123')
@@ -118,8 +171,8 @@ async function main() {
   for (const car of CARS) {
     const result = calcBreakdown({
       basePriceCny: car.basePriceCny,
-      cnyRate: CNY_RATE,
-      eurRate: EUR_RATE,
+      cnyRate: rates.cny,
+      eurRate: rates.eur,
       engineCc: car.engineCc,
       powerHp: car.powerHp,
       powertrain: car.powertrain,
@@ -129,7 +182,8 @@ async function main() {
       marginRub: car.marginRub,
     })
 
-    await prisma.car.delete({ where: { id: car.id } }).catch(() => {})
+    // deleteMany, а не delete: не бросает и не шумит в лог, когда записи ещё нет.
+    await prisma.car.deleteMany({ where: { id: car.id } })
 
     await prisma.car.create({
       data: {
@@ -145,9 +199,9 @@ async function main() {
         maskImage: car.maskImage,
         specs: car.specs,
         basePriceCny: car.basePriceCny,
-        cnyRate: CNY_RATE,
-        eurRate: EUR_RATE,
-        rateDate: RATE_DATE,
+        cnyRate: rates.cny,
+        eurRate: rates.eur,
+        rateDate: rates.date,
         engineCc: car.engineCc,
         powerHp: car.powerHp,
         powertrain: car.powertrain,
