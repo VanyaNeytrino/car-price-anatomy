@@ -1,0 +1,14 @@
+-- AlterTable
+ALTER TABLE "Car" ADD COLUMN     "basePriceCny" INTEGER,
+ADD COLUMN     "cnyRate" DECIMAL(10,4),
+ADD COLUMN     "engineCc" INTEGER,
+ADD COLUMN     "eurRate" DECIMAL(10,4),
+ADD COLUMN     "importScheme" TEXT NOT NULL DEFAULT 'INDIVIDUAL',
+ADD COLUMN     "powerHp" INTEGER,
+ADD COLUMN     "powertrain" TEXT NOT NULL DEFAULT 'ICE',
+ADD COLUMN     "rateDate" TIMESTAMP(3),
+ADD COLUMN     "thirtyMinutePowerHp" INTEGER;
+
+-- AlterTable
+ALTER TABLE "CostLayer" ADD COLUMN     "isAuto" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "kind" TEXT NOT NULL DEFAULT 'MANUAL';
