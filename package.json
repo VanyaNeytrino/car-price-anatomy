@@ -3,13 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "db:seed": "tsx prisma/seed.ts",
+    "dev": "next dev",
     "lint": "eslint",
+    "postinstall": "prisma generate",
+    "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:seed": "tsx prisma/seed.ts"
+    "vercel-build": "prisma migrate deploy && next build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
