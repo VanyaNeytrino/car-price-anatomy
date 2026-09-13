@@ -28,12 +28,26 @@ describe("утильсбор", () => {
 
   it("снимает льготу у ДВС выше 160 л.с.", () => {
     const r = calcRecycling({ ...base, powertrain: "ICE", powerHp: 200 });
-    expect(r.amount).toBe(794_000);
+    expect(r.amount).toBe(952_800);
   });
 
   it("считает EREV по 30-минутной мощности, а не по пиковой", () => {
-    // 449 пиковых -> 202 расчётных -> диапазон 190-220
-    expect(calcRecycling(base).amount).toBe(794_000);
+    // 449 пиковых -> 202 расчётных -> 1,5 л и до 220 л.с.
+    expect(calcRecycling(base).amount).toBe(952_800);
+  });
+
+  it("учитывает объём двигателя, а не только мощность", () => {
+    // та же мощность, больший объём — другая строка перечня
+    const small = calcRecycling({ ...base, powertrain: "ICE", engineCc: 1500, powerHp: 180 });
+    const big = calcRecycling({ ...base, powertrain: "ICE", engineCc: 2500, powerHp: 180 });
+    expect(small.amount).toBe(900_000);
+    expect(big.amount).toBe(2_306_800);
+    expect(big.amount).toBeGreaterThan(small.amount);
+  });
+
+  it("предупреждает, что ставка для электромобилей не подтверждена", () => {
+    const ev = calcRecycling({ ...base, powertrain: "EV", engineCc: 0, powerHp: 544 });
+    expect(ev.warning).toContain("подтвердить не удалось");
   });
 
   it("не даёт электромобилю выше 80 л.с. льготную ставку", () => {
@@ -47,8 +61,8 @@ describe("утильсбор", () => {
     expect(calcRecycling({ ...base, powertrain: "EV", powerHp: 100 }).amount).toBe(3_400);
   });
 
-  it("предупреждает, когда мощность выходит за известную таблицу", () => {
-    const r = calcRecycling({ ...base, powertrain: "ICE", powerHp: 600 });
+  it("предупреждает, когда объём и мощность выходят за известную таблицу", () => {
+    const r = calcRecycling({ ...base, powertrain: "ICE", engineCc: 4000, powerHp: 600 });
     expect(r.warning).toBeDefined();
   });
 });

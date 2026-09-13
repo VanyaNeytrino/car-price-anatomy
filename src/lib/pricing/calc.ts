@@ -8,8 +8,8 @@ import {
   HOMOLOGATION_FEES_RUB,
   LEGAL_ENTITY_DUTY_RATE,
   RECYCLING_BASE_RUB,
-  RECYCLING_FULL_ELECTRIC,
-  RECYCLING_FULL_ICE,
+  RECYCLING_ELECTRIC_UNVERIFIED,
+  RECYCLING_FULL,
   RECYCLING_POWER_LIMIT,
   RECYCLING_PREFERENTIAL,
   THIRTY_MINUTE_POWER_RATIO,
@@ -172,6 +172,7 @@ export function calcRecycling(input: PricingInput): { amount: number; note: stri
   const power = recyclingPower(input);
   const limit = RECYCLING_POWER_LIMIT[input.powertrain];
   const isNew = input.ageBand === "NEW";
+  const pick = (row: { new: number; used: number }) => (isNew ? row.new : row.used);
 
   if (power <= limit) {
     const coef = isNew ? RECYCLING_PREFERENTIAL.NEW : RECYCLING_PREFERENTIAL.USED;
@@ -181,30 +182,33 @@ export function calcRecycling(input: PricingInput): { amount: number; note: stri
     };
   }
 
-  // У чистых электромобилей двигателя нет, для них ставка плоская.
-  if (input.powertrain === "EV") {
+  // У чистого электромобиля рабочего объёма нет — в перечне для него своя строка.
+  if (input.powertrain === "EV" || input.engineCc <= 0) {
     return {
-      amount: isNew ? RECYCLING_FULL_ELECTRIC.new : RECYCLING_FULL_ELECTRIC.used,
+      amount: pick(RECYCLING_ELECTRIC_UNVERIFIED),
       note: `Полная ставка: ${power} л.с. выше порога ${limit} л.с.`,
+      warning:
+        "Ставку утильсбора для электромобилей подтвердить не удалось — сверьте с ПП РФ № 1291.",
     };
   }
 
-  const row = RECYCLING_FULL_ICE.find((r) => power <= r.maxHp);
+  // Сбор зависит и от объёма, и от мощности: строки перебираются в порядке
+  // возрастания объёма, внутри объёма — по мощности.
+  const row = RECYCLING_FULL.find((r) => input.engineCc <= r.maxCc && power <= r.maxHp);
   if (!row) {
-    // Намеренно не выдумываем число: источники по диапазону свыше 340 л.с.
-    // расходятся, и тихая подстановка — ровно та ошибка, из-за которой
-    // в seed оказался утильсбор 34 000 ₽.
-    const fallback = RECYCLING_FULL_ICE[RECYCLING_FULL_ICE.length - 1];
+    // Намеренно не выдумываем число: именно тихая подстановка правдоподобного
+    // значения однажды уже дала здесь ошибку на 158 000 ₽.
+    const fallback = RECYCLING_FULL[RECYCLING_FULL.length - 1];
     return {
-      amount: isNew ? fallback.new : fallback.used,
-      note: `Свыше 340 л.с. — ставка требует уточнения`,
-      warning: `Утильсбор для ${power} л.с. выходит за известную таблицу (до 340 л.с.). Показана ставка верхнего диапазона — сверьте с ПП РФ № 1291.`,
+      amount: pick(fallback),
+      note: `${input.engineCc} см³, ${power} л.с. — вне известной таблицы`,
+      warning: `Утильсбор для ${input.engineCc} см³ и ${power} л.с. выходит за проверенные строки перечня. Показана ставка верхней строки — сверьте с ПП РФ № 1291.`,
     };
   }
 
   return {
-    amount: isNew ? row.new : row.used,
-    note: `Полная ставка, до ${row.maxHp} л.с. (30-мин. мощность ${power} л.с.)`,
+    amount: pick(row),
+    note: `Полная ставка: до ${row.maxCc} см³, до ${row.maxHp} л.с. (30-мин. мощность ${power} л.с.)`,
   };
 }
 
