@@ -66,10 +66,17 @@ describe("схема ввоза", () => {
     expect(kinds).toContain("EXCISE");
   });
 
-  it("электромобиль всегда считается постатейно — единая ставка к нему не применяется", () => {
+  it("электромобиль у физлица идёт по единой ставке, а не постатейно", () => {
     const ev = { ...base, powertrain: "EV" as const, engineCc: 0, scheme: "INDIVIDUAL" as const };
-    expect(isItemizedScheme(ev)).toBe(true);
-    expect(calcBreakdown(ev).layers.map((l) => l.kind)).toContain("VAT");
+    expect(isItemizedScheme(ev)).toBe(false);
+    expect(calcBreakdown(ev).layers.map((l) => l.kind)).not.toContain("VAT");
+  });
+
+  it("у электромобиля без объёма единая ставка даёт ровно 48%, порог €/см³ не срабатывает", () => {
+    const ev = { ...base, powertrain: "EV" as const, engineCc: 0, scheme: "INDIVIDUAL" as const };
+    const duty = calcBreakdown(ev).layers.find((l) => l.kind === "DUTY");
+    const customsValue = ev.basePriceCny * ev.cnyRate;
+    expect(duty?.amount).toBe(Math.round(customsValue * 0.48));
   });
 });
 

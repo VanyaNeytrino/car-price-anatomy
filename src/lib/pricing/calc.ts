@@ -118,14 +118,15 @@ export function recyclingPower(input: Pick<PricingInput, "powertrain" | "powerHp
 }
 
 /**
- * Единая ставка физлица (48%) к электромобилям не применяется: они идут по
- * ЕТТ ЕАЭС со ставкой 15%, а акциз и НДС начисляются отдельно. Поэтому для EV
- * разбивка всегда постатейная, независимо от выбранной схемы.
- * Это выяснилось при сверке расчёта с рынком: по единой ставке электромобиль
- * выходил дороже, чем его реально продают.
+ * Постатейная разбивка (пошлина + акциз + НДС) — только для коммерческого ввоза.
+ *
+ * Электромобили здесь не исключение. Единая ставка физлица применяется и к ним:
+ * порог «не менее €/см³» просто не срабатывает, потому что рабочего объёма нет,
+ * и остаются чистые 48%. Сверка с рынком это подтверждает — по единой ставке
+ * Zeekr 009 и 001 дают дилеру 15-17% маржи, что похоже на правду.
  */
 export function isItemizedScheme(input: Pick<PricingInput, "scheme" | "powertrain">): boolean {
-  return input.scheme === "LEGAL_ENTITY" || input.powertrain === "EV";
+  return input.scheme === "LEGAL_ENTITY";
 }
 
 export function calcDuty(input: PricingInput): { amount: number; note: string } {
@@ -134,10 +135,7 @@ export function calcDuty(input: PricingInput): { amount: number; note: string } 
   if (isItemizedScheme(input)) {
     return {
       amount: round(customsValueRub * LEGAL_ENTITY_DUTY_RATE),
-      note:
-        input.scheme === "LEGAL_ENTITY"
-          ? `Ввозная пошлина ${LEGAL_ENTITY_DUTY_RATE * 100}%`
-          : `ЕТТ ЕАЭС ${LEGAL_ENTITY_DUTY_RATE * 100}% — для электромобилей единая ставка не применяется`,
+      note: `Ввозная пошлина ${LEGAL_ENTITY_DUTY_RATE * 100}%`,
     };
   }
 
