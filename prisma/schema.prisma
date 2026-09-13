@@ -1,0 +1,100 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Мультитентность ---
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique // Например "rucars" -> saas.com/widget/rucars/...
+  domain    String?
+  createdAt DateTime @default(now())
+  
+  users     User[]
+  cars      Car[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  name           String?
+  email          String       @unique
+  passwordHash   String       // bcrypt
+  role           String       @default("ADMIN") // ADMIN, OWNER
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+// --- Продуктовая часть ---
+
+model Car {
+  id             String       @id @default(cuid())
+  
+  // Организация теперь опциональна. Если null — значит это глобальный системный шаблон.
+  organizationId String?      
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  // Флаг шаблона. Если true — это эталон, который можно клонировать.
+  isTemplate     Boolean      @default(false)
+
+  brand          String
+  model          String
+  year           Int
+  
+  // Ссылки на медиа
+  image          String       
+  maskImage      String?      
+  
+  // Геометрия SVG (для совместимости с текущим фронтом)
+  viewBox        String       @default("0 0 1000 380")
+  svgPath        String       @default("")
+
+  // JSON хранит { engine: "1.5T", power: "449 HP", range: "1315 KM" }
+  specs          Json         
+
+  // --- Входные данные для калькулятора растаможки ---
+  // Раньше суммы вбивались руками и протухали: две машины в seed оказались
+  // посчитаны по разным курсам юаня (13,27 и 10,77 при реальных 12,56).
+  basePriceCny        Int?
+  cnyRate             Decimal?  @db.Decimal(10, 4)
+  eurRate             Decimal?  @db.Decimal(10, 4)
+  rateDate            DateTime?
+  engineCc            Int?      // 0 у чистых электромобилей
+  powerHp             Int?      // пиковая, из ПТС
+  thirtyMinutePowerHp Int?      // для EV/гибридов, если подтверждена
+  powertrain          String    @default("ICE")       // ICE | HYBRID | EREV | EV
+  importScheme        String    @default("INDIVIDUAL") // INDIVIDUAL | LEGAL_ENTITY
+
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  costs          CostLayer[]
+}
+
+model CostLayer {
+  id          String  @id @default(cuid())
+  carId       String
+  car         Car     @relation(fields: [carId], references: [id], onDelete: Cascade)
+  
+  label       String
+  amount      Int
+  color       String  // HEX. Раньше тут лежал класс Tailwind, который мог
+                      // не попасть в сборку и молча становился белым.
+  description String?
+  order       Int     @default(0)
+  isVisible   Boolean @default(true)
+
+  // Считан калькулятором (пересчитывается при смене входных данных)
+  // или вбит дилером руками (логистика, маржа — их трогать нельзя).
+  kind        String  @default("MANUAL")
+  isAuto      Boolean @default(false)
+}

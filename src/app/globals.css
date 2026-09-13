@@ -1,3 +1,12 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+  Виджет встраивается в чужой сайт через iframe, и фон страницы обязан быть
+  прозрачным. Корневой layout красит body в чёрный, из-за чего на светлом сайте
+  дилера вокруг виджета оставался чёрный прямоугольник.
+*/
+body:has([data-embed]) {
+  background: transparent;
+}

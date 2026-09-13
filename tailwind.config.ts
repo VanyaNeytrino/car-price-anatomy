@@ -12,7 +12,7 @@ const config: Config = {
   },
   plugins: [],
   safelist: [
-    'bg-blue-600', 'bg-slate-500', 'bg-orange-600', 'bg-purple-600', 'bg-yellow-400', 'bg-green-500', 'shadow-[0_0_10px_currentColor]'
+    'bg-blue-600', 'bg-cyan-500', 'bg-slate-500', 'bg-orange-600', 'bg-purple-600', 'bg-yellow-400', 'bg-green-500', 'shadow-[0_0_10px_currentColor]'
   ]
 };
 export default config;
